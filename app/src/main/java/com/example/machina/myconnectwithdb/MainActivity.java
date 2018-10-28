@@ -1,57 +1,131 @@
 package com.example.machina.myconnectwithdb;
 
+import android.app.ProgressDialog;
+import android.os.AsyncTask;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.text.method.ScrollingMovementMethod;
+import android.util.Log;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.TextView;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 public class MainActivity extends AppCompatActivity {
-    private String test;
-    private URLConnector task;
-    private JSONObject jo = null;
+    private static String IP_ADDRESS = "192.168.35.45:8080";
+    private static String TAG = "phptest";
+
+    private EditText mEditTextName;
+    private EditText mEditTextCountry;
+    private TextView mTextViewResult;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        test = "https://localhost/";
-        task = new URLConnector(test);
 
-        task.start();
+        mEditTextName = (EditText)findViewById(R.id.editText_main_name);
+        mEditTextCountry = (EditText)findViewById(R.id.editText_main_country);
+        mTextViewResult = (TextView)findViewById(R.id.textView_main_result);
 
-        try{
-            task.join();
-            System.out.println("Waiting for result...");
-        }catch (InterruptedException e){
+        mTextViewResult.setMovementMethod(new ScrollingMovementMethod());
 
-        }
+        Button buttonInsert = (Button)findViewById(R.id.button_main_insert);
+        buttonInsert.setOnClickListener(new View.OnClickListener(){
+            @Override
+            public void onClick(View v) {
+                String name = mEditTextName.getText().toString();
+                String country = mEditTextCountry.getText().toString();
 
-        String result = task.getResult();
+                InsertData task = new InsertData();
+                task.execute("http://" + IP_ADDRESS + "/insert.php", name, country);
 
-        System.out.println(result);
-
-        parseJSON(result);
+                mEditTextName.setText("");
+                mEditTextCountry.setText("");
+            }
+        });
     }
 
-    public String parseJSON(String target){
-        try{
-            JSONObject jo = new JSONObject(target);
+    class InsertData extends AsyncTask<String, Void, String>{
+        ProgressDialog progressDialog;
 
-            //Get data by 'name'
-            JSONArray jsonArr = jo.getJSONArray("id");
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
 
-            for(int i = 0; i < jsonArr.length(); i++){
-                JSONObject object = jsonArr.getJSONObject(i);
-
-                System.out.println(object.getString("id"));
-            }
-
-            return "";
-        }catch (Exception e){
-            e.printStackTrace();
+            progressDialog = ProgressDialog.show(MainActivity.this, "Please Wait", null, true, true);
         }
 
-        return null;
+        @Override
+        protected void onPostExecute(String s) {
+            super.onPostExecute(s);
+
+            progressDialog.dismiss();
+            mTextViewResult.setText(s);
+            Log.d(TAG, "POST response - " + s);
+        }
+
+        @Override
+        protected String doInBackground(String... strings) {
+            String name = (String)strings[1];
+            String country = (String)strings[2];
+
+            String serverURL = (String)strings[0];
+            String postParameters = "name=" + name + "&country=" + country;
+
+            try{
+                URL url = new URL(serverURL);
+                HttpURLConnection httpURLConnection = (HttpURLConnection)url.openConnection();
+
+                httpURLConnection.setReadTimeout(5000);
+                httpURLConnection.setConnectTimeout(5000);
+                httpURLConnection.setRequestMethod("POST");
+                httpURLConnection.connect();
+
+                OutputStream outputStream = httpURLConnection.getOutputStream();
+                outputStream.write(postParameters.getBytes("UTF-8"));
+                outputStream.flush();
+                outputStream.close();
+
+                int responseStatusCode = httpURLConnection.getResponseCode();
+                Log.d(TAG, "POST response code - " + responseStatusCode);
+
+                InputStream inputStream;
+                if(responseStatusCode == HttpURLConnection.HTTP_OK){
+                    inputStream = httpURLConnection.getInputStream();
+                }else{
+                    inputStream = httpURLConnection.getErrorStream();
+                }
+
+                InputStreamReader inputStreamReader = new InputStreamReader(inputStream, "UTF-8");
+
+                BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+
+                StringBuilder sb = new StringBuilder();
+                String line = null;
+
+                while((line = bufferedReader.readLine()) != null){
+                    sb.append(line);
+                }
+
+                bufferedReader.close();
+
+                return sb.toString();
+
+
+            }catch(Exception e){
+                Log.d(TAG, "InsertData: Error ", e);
+
+                return new String("Error: " + e.getMessage());
+            }
+        }
     }
 }
